@@ -98,7 +98,7 @@ class API extends REST
     private function test()
     {
         $data = $this->json(getallheaders());
-        $this->response($data, 101);
+        $this->response($data, 200);
     }
 
     private function get_current_user()
