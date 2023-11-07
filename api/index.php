@@ -1,37 +1,18 @@
 <?php
     error_reporting(E_ALL ^ E_DEPRECATED);
     require_once("REST.api.php");
+    require_once("lib/Database.class.php");
+    require_once("lib/Signup.class.php");
 
     class API extends REST {
 
         public $data = "";
 
-        const DB_SERVER = "localhost";
-        const DB_USER = "root";
-        const DB_PASSWORD = "";
-        const DB = "apis";
-
         private $db = NULL;
 
         public function __construct(){
-            parent::__construct();                // Init parent contructor
-            $this->dbConnect();                    // Initiate Database connection
-        }
-
-        /*
-           Database connection
-        */
-        private function dbConnect(){
-            if ($this->db != NULL) {
-				return $this->db;
-			} else {
-				$this->db = mysqli_connect(self::DB_SERVER,self::DB_USER,self::DB_PASSWORD, self::DB);
-				if (!$this->db) {
-					die("Connection failed: ".mysqli_connect_error());
-				} else {
-					return $this->db;
-				}
-			}
+            parent::__construct();                  // Init parent contructor
+            $this->db = Database::getConnection();  // Initiate Database connection
         }
 
         /*
@@ -108,6 +89,22 @@
         function generate_hash(){
             $bytes = random_bytes(16);
             return bin2hex($bytes);
+        }
+
+        private function gen_hash(){
+            if(isset($this->_request['pass'])){
+                $s = new Signup("", $this->_request['pass'], "");
+                $hash = $s->hashPassword();
+                $data = [
+                    "hash" => $hash,
+                    "info" => password_get_info($hash),
+                    "val" => $this->_request['pass'],
+                    "verify" => password_verify($this->_request['pass'], $hash),
+                    "spot_verify" => password_verify($this->_request['pass'], password_hash($this->_request['pass'], PASSWORD_BCRYPT))
+                ];
+                $data = $this->json($data);
+                $this->response($data,200);
+            }
         }
 
 
