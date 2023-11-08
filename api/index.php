@@ -3,6 +3,10 @@ error_reporting(E_ALL ^ E_DEPRECATED);
 require_once($_SERVER['DOCUMENT_ROOT']."/api/REST.api.php");
 require_once($_SERVER['DOCUMENT_ROOT']."/api/lib/Database.class.php");
 require_once($_SERVER['DOCUMENT_ROOT']."/api/lib/Signup.class.php");
+require_once($_SERVER['DOCUMENT_ROOT']."/api/lib/User.class.php");
+require_once($_SERVER['DOCUMENT_ROOT']."/api/lib/Auth.class.php");
+require_once($_SERVER['DOCUMENT_ROOT']."/api/lib/Notes.class.php");
+require_once($_SERVER['DOCUMENT_ROOT']."/api/lib/Folder.class.php");
 
 class API extends REST {
     
@@ -10,6 +14,7 @@ class API extends REST {
     
     private $db = NULL;
     private $current_call;
+    private $auth = null;
     
     public function __construct(){
         parent::__construct();                  // Init parent contructor
@@ -29,25 +34,76 @@ class API extends REST {
         else {
             if(isset($_GET['namespace'])){
                 $dir = $_SERVER['DOCUMENT_ROOT'].'/api/apis/'.$_GET['namespace'];
-                $methods = scandir($dir);
-                //var_dump($methods);
-                foreach($methods as $m){
-                    if($m == "." or $m == ".."){
-                        continue;
-                    }
-                    $basem = basename($m, '.php');
-                    //echo "Trying to call $basem() for $func()\n";
-                    if($basem == $func){
-                        include $dir."/".$m;
-                        $this->current_call = Closure::bind(${$basem}, $this, get_class());
-                        $this->$basem();
-                    }
+                $file = $dir.'/'.$func.'.php';
+                if(file_exists($file)){
+                    include $file;
+                    $this->current_call = Closure::bind(${$func}, $this, get_class());
+                    $this->$func();
+                } else {
+                    $this->response($this->json(['error'=>'method_not_found']),404);
                 }
+
+                /** 
+                 * Use the following snippet if you want to include multiple files
+                 */
+                // $methods = scandir($dir);
+                // //var_dump($methods);
+                // foreach($methods as $m){
+                //     if($m == "." or $m == ".."){
+                //         continue;
+                //     }
+                //     $basem = basename($m, '.php');
+                //     //echo "Trying to call $basem() for $func()\n";
+                //     if($basem == $func){
+                //         include $dir."/".$m;
+                //         $this->current_call = Closure::bind(${$basem}, $this, get_class());
+                //         $this->$basem();
+                //     }
+                // }
             } else {
                 //we can even process functions without namespace here.
-                $this->response($this->json(['error'=>'methood_not_found']),404);
+                $this->response($this->json(['error'=>'method_not_found']),404);
             }
         }
+    }
+
+    public function auth(){
+        $headers = getallheaders();
+        if(isset($headers['Authorization'])){
+            $token = explode(' ', $headers['Authorization']);
+            $this->auth = new Auth($token[1]);
+        }
+    }
+
+    public function isAuthenticated(){
+        if($this->auth == null){
+            return false;
+        }
+        if($this->auth->getOAuth()->authenticate() and isset($_SESSION['username'])){
+            return true;
+        } else {
+            return false;
+        }
+    }
+
+    public function getUsername(){
+        return $_SESSION['username'];
+    }
+
+    public function die($e){
+        $data = [
+            "error" => $e->getMessage()
+        ];
+        $response_code = 400;
+        if($e->getMessage() == "Expired token" || $e->getMessage() == "Unauthorized"){
+            $response_code = 403;
+        }
+
+        if($e->getMessage() == "Not found"){
+            $response_code = 404;
+        }
+        $data = $this->json($data);
+        $this->response($data,$response_code);
     }
 
     public function __call($method, $args){
@@ -59,19 +115,6 @@ class API extends REST {
     }
     
     /*************API SPACE START*******************/
-    
-    private function about(){
-        
-        if($this->get_request_method() != "POST"){
-            $error = array('method'=> $this->get_request_method(), 'status' => 'WRONG_CALL', "msg" => "The type of call cannot be accepted by our servers.");
-            $error = $this->json($error);
-            $this->response($error,406);
-        }
-        $data = array('method'=> $this->get_request_method(),'version' => $this->_request['version'], 'desc' => 'This API is created by Blovia Technologies Pvt. Ltd., for the public usage for accessing data about vehicles.');
-        $data = $this->json($data);
-        $this->response($data,200);
-        
-    }
     
     private function test(){
         $data = $this->json(getallheaders());
@@ -129,5 +172,11 @@ class API extends REST {
 // Initiiate Library
 
 $api = new API;
-$api->processApi();
+try {
+    $api->auth();
+    $api->processApi();
+} catch (Exception $e){
+    $api->die($e);
+}
+
 ?>
